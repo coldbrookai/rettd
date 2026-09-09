@@ -1,0 +1,11 @@
+# RETTD Project
+
+# Ignore these folders
+venv/
+notes/
+resources/
+
+# Ignore these files
+*.csv
+README.*
+
