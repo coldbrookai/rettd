@@ -1,1 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RETTD — Commercial Sale Leads</title>
+<style>
+  :root {
+    --bg: #F1F7F0;
+    --surface: #FFF9E8;
+    --primary: #2F5D3A;
+    --primary-hover: #244A2E;
+    --secondary: #8FAF8F;
+    --accent: #C99A3D;
+    --text: #26352B;
+    --muted: #68756B;
+    --border: #D5E1D3;
+    --success: #39734A;
+    --warning: #C58A24;
+    --error: #B6534A;
+    --info: #527A91;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", Inter, system-ui, Roboto, sans-serif;
+    font-size: 14px;
+  }
+  .hidden { display: none !important; }
 
+  /* ---------- Input page (section 6.2) ---------- */
+  #view-input {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(38,53,43,0.10);
+    padding: 32px;
+    width: 100%;
+    max-width: 460px;
+  }
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .field select,
+  .field input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    color: var(--text);
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .field select:focus,
+  .field input[type="text"]:focus {
+    outline: 2px solid var(--secondary);
+    outline-offset: 1px;
+  }
+  .lookback-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 24px;
+  }
+  .lookback-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .lookback-option input[type="checkbox"] { accent-color: var(--primary); }
+  .lookback-option label {
+    font-size: 14px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--text);
+    margin: 0;
+  }
+
+  button.btn-primary {
+    width: 100%;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--primary);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+  button.btn-primary:disabled { background: var(--secondary); cursor: not-allowed; }
+
+  button.btn-ghost {
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button.btn-ghost:hover { background: var(--bg); }
+
+  .alert {
+    background: var(--surface);
+    border-radius: 8px;
+    border-left: 3px solid var(--info);
+    padding: 10px 14px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .alert.error { border-left-color: var(--error); color: var(--error); }
+  .alert.warning { border-left-color: var(--warning); color: var(--warning); }
+  .alert.success { border-left-color: var(--success); color: var(--success); }
+
+  /* ---------- Output page (section 6.4) ---------- */
+  #view-output {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 16px 48px;
+  }
+  .output-header {
+    margin-bottom: 16px;
+  }
+  .output-header-title {
+    text-align: center;
+  }
+  .output-header img { height: 44px; }
+  .output-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 8px 0 2px;
+  }
+  .output-header .subtitle {
+    font-style: italic;
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  .criteria-line {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .criteria-line strong { color: var(--text); font-weight: 600; }
+
+  .output-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 16px 0;
+  }
+
+  .table-scroll {
+    max-height: 60vh;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+  }
+  table.results {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+  }
+  table.results col.col-check { width: 40px; }
+  table.results col.col-map,
+  table.results col.col-lot { width: 70px; }
+  table.results col.col-price { width: 120px; }
+  table.results col.col-date { width: 110px; }
+  table.results col.col-dln { width: 110px; }
+  table.results thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.results tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.results tbody tr:last-child td { border-bottom: none; }
+  table.results td.col-check { text-align: center; }
+  table.results td.col-check input { accent-color: var(--primary); }
+
+  .empty-state {
+    padding: 32px;
+    text-align: center;
+    color: var(--muted);
+  }
+
+  .loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(38,53,43,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  .loading-box {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 24px 32px;
+    font-weight: 600;
+    color: var(--text);
+    box-shadow: 0 10px 24px rgba(38,53,43,0.14);
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== Input page (matches resources/NewDataEntry.png) ========== -->
+<section id="view-input">
+  <div class="card">
+    <div id="input-alert-slot"></div>
+
+    <div class="field">
+      <label for="property-type">Property Type *</label>
+      <select id="property-type">
+        <option value="" selected disabled>Select...</option>
+        <option value="303">Commercial - 5+ Unit Apartment</option>
+        <option value="309">Commercial - Automotive</option>
+        <option value="304">Commercial - Bank</option>
+        <option value="312">Commercial - Hotel/Motel/Inn</option>
+        <option value="310">Commercial - Marina</option>
+        <option value="306">Commercial - Medical</option>
+        <option value="301">Commercial - Mixed Use</option>
+        <option value="313">Commercial - Nursing Home</option>
+        <option value="307">Commercial - Office</option>
+        <option value="320">Commercial - Other</option>
+        <option value="305">Commercial - Restaurant</option>
+        <option value="308">Commercial - Retail</option>
+        <option value="314">Commercial - Shopping Mall</option>
+        <option value="311">Commercial - Warehouse</option>
+        <option value="401">Industrial - Gas and Oil</option>
+        <option value="403">Industrial - Gravel Pit</option>
+        <option value="407">Industrial - Heavy Manufacture</option>
+        <option value="406">Industrial - Light Manufacture</option>
+        <option value="404">Industrial - Lumber/Saw Mill</option>
+        <option value="420">Industrial - Other</option>
+        <option value="405">Industrial - Pulp/Paper Mill</option>
+        <option value="402">Industrial - Utility</option>
+        <option value="107">Vacant Land - Commercial Zone</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="county">County *</label>
+      <select id="county">
+        <option value="" selected disabled>Select...</option>
+        <option value="ME001">Androscoggin</option>
+        <option value="ME003">Aroostook</option>
+        <option value="ME005">Cumberland</option>
+        <option value="ME007">Franklin</option>
+        <option value="ME009">Hancock</option>
+        <option value="ME011">Kennebec</option>
+        <option value="ME013">Knox</option>
+        <option value="ME015">Lincoln</option>
+        <option value="ME017">Oxford</option>
+        <option value="ME019">Penobscot</option>
+        <option value="ME021">Piscataquis</option>
+        <option value="ME023">Sagadahoc</option>
+        <option value="ME025">Somerset</option>
+        <option value="ME027">Waldo</option>
+        <option value="ME029">Washington</option>
+        <option value="ME031">York</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="municipality">Municipality/Township</label>
+      <select id="municipality" disabled>
+        <option value="">Select a county first</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Look-Back Period *</label>
+      <div class="lookback-grid">
+        <div class="lookback-option"><input type="checkbox" id="lb-30d" data-lookback="30d"><label for="lb-30d">30 Days</label></div>
+        <div class="lookback-option"><input type="checkbox" id="lb-1y" data-lookback="1y"><label for="lb-1y">1 Year</label></div>
+        <div class="lookback-option"><input type="checkbox" id="lb-60d" data-lookback="60d"><label for="lb-60d">60 Days</label></div>
+        <div class="lookback-option"><input type="checkbox" id="lb-5y" data-lookback="5y"><label for="lb-5y">5 Years</label></div>
+        <div class="lookback-option"><input type="checkbox" id="lb-90d" data-lookback="90d"><label for="lb-90d">90 Days</label></div>
+        <div class="lookback-option"><input type="checkbox" id="lb-10y" data-lookback="10y"><label for="lb-10y">10 Years</label></div>
+        <div class="lookback-option"><input type="checkbox" id="lb-180d" data-lookback="180d"><label for="lb-180d">180 Days</label></div>
+      </div>
+    </div>
+
+    <button class="btn-primary" id="search-btn" disabled>Search</button>
+  </div>
+</section>
+
+<!-- ========== Output page (matches resources/NewOutputLayout.png) ========== -->
+<section id="view-output" class="hidden">
+  <div class="output-header">
+    <div class="output-header-title">
+      <img src="resources/MVClgo01.png" alt="Maine Valuation Company">
+      <h1>Commercial Sale Leads</h1>
+      <p class="subtitle">Maine Department of Revenue - Real Estate Transfer Tax Database</p>
+    </div>
+    <p class="criteria-line">
+      <strong>Property Type:</strong> <span id="criteria-property-type"></span>
+      &nbsp;&nbsp;
+      <strong>County:</strong> <span id="criteria-county"></span>
+    </p>
+  </div>
+
+  <div id="output-alert-slot"></div>
+
+  <div class="output-toolbar">
+    <span id="row-count" style="color: var(--muted); font-size: 13px;"></span>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn-primary" id="export-btn" style="width: auto;" disabled>Export Selected</button>
+      <button class="btn-ghost" id="new-search-btn">New Search</button>
+    </div>
+  </div>
+
+  <div id="table-wrap"></div>
+</section>
+
+<div class="loading-overlay hidden" id="loading-overlay">
+  <div class="loading-box">Searching Maine Revenue Services… this can take 10–20 seconds.</div>
+</div>
+
+<script>
+  const viewInput = document.getElementById('view-input');
+  const viewOutput = document.getElementById('view-output');
+  const loadingOverlay = document.getElementById('loading-overlay');
+  const searchBtn = document.getElementById('search-btn');
+  const propertyTypeEl = document.getElementById('property-type');
+  const countyEl = document.getElementById('county');
+  const municipalityEl = document.getElementById('municipality');
+  const lookbackChecks = Array.from(document.querySelectorAll('[data-lookback]'));
+  const exportBtn = document.getElementById('export-btn');
+  const tableWrap = document.getElementById('table-wrap');
+  let selectedDlns = new Set();
+  let lastCriteria = null;
+  let bridgeMissing = false;
+
+  const COLUMNS = [
+    { field: 'Municipality', label: 'Municipality' },
+    { field: 'Map', label: 'Map', cls: 'col-map' },
+    { field: 'Lot', label: 'Lot', cls: 'col-lot' },
+    { field: 'Seller', label: 'Seller' },
+    { field: 'Buyer', label: 'Buyer' },
+    { field: 'Transfer Date', label: 'Transfer Date', cls: 'col-date' },
+    { field: 'Purchase Price', label: 'Purchase Price', cls: 'col-price', format: formatPriceNoCents },
+    { field: 'DLN', label: 'DLN', cls: 'col-dln' },
+  ];
+
+  // Site value arrives as e.g. "$1,186,919.00" -- displayed rounded to whole
+  // dollars (no cents) on screen, matching the xlsx export's number format.
+  function formatPriceNoCents(raw) {
+    const num = parseFloat(String(raw).replace(/[^0-9.-]/g, ''));
+    if (Number.isNaN(num)) return raw;
+    return num.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  }
+
+  // Look-Back Period checkboxes: checkbox skin, radio-group semantics
+  // (section 6.2 — checking one clears any other).
+  lookbackChecks.forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) {
+        lookbackChecks.forEach(other => { if (other !== cb) other.checked = false; });
+      }
+      updateSearchEnabled();
+    });
+  });
+  propertyTypeEl.addEventListener('change', updateSearchEnabled);
+  countyEl.addEventListener('change', onCountyChange);
+
+  async function onCountyChange() {
+    updateSearchEnabled();
+    clearAlert('input-alert-slot');
+    if (!countyEl.value) {
+      municipalityEl.innerHTML = '<option value="">Select a county first</option>';
+      municipalityEl.disabled = true;
+      return;
+    }
+    municipalityEl.innerHTML = '<option value="">Loading…</option>';
+    municipalityEl.disabled = true;
+    try {
+      const result = await window.pywebview.api.get_municipalities(countyEl.value);
+      if (result.ok) {
+        const opts = ['<option value="">All Municipalities</option>'].concat(
+          result.options.map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`)
+        );
+        municipalityEl.innerHTML = opts.join('');
+        municipalityEl.disabled = false;
+      } else {
+        municipalityUnavailable(result.error || 'unknown error');
+      }
+    } catch (err) {
+      municipalityUnavailable(String(err));
+    }
+  }
+
+  function municipalityUnavailable(detail) {
+    municipalityEl.innerHTML =
+      '<option value="">Unavailable for this county</option><option value="__retry__">Retry</option>';
+    municipalityEl.disabled = false;
+    showAlert('input-alert-slot', 'warning',
+      `Could not load municipalities for this county (${detail}). You can still search without a municipality filter, or select "Retry" above to try again.`);
+  }
+
+  municipalityEl.addEventListener('change', () => {
+    if (municipalityEl.value === '__retry__') {
+      onCountyChange();
+    }
+  });
+
+  function selectedLookback() {
+    const checked = lookbackChecks.find(cb => cb.checked);
+    return checked ? checked.dataset.lookback : null;
+  }
+
+  function updateSearchEnabled() {
+    const ok = propertyTypeEl.value && countyEl.value && selectedLookback() && !bridgeMissing;
+    searchBtn.disabled = !ok;
+  }
+
+  function showAlert(slotId, type, message) {
+    const slot = document.getElementById(slotId);
+    slot.innerHTML = `<div class="alert ${type}">${escapeHtml(message)}</div>`;
+  }
+
+  function clearAlert(slotId) {
+    document.getElementById(slotId).innerHTML = '';
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  searchBtn.addEventListener('click', async () => {
+    clearAlert('input-alert-slot');
+    const criteria = {
+      property_type_code: propertyTypeEl.value,
+      county_code: countyEl.value,
+      municipality_value: municipalityEl.value || null,
+      look_back: selectedLookback(),
+    };
+    loadingOverlay.classList.remove('hidden');
+    try {
+      const result = await window.pywebview.api.search(criteria);
+      loadingOverlay.classList.add('hidden');
+      if (!result.ok) {
+        showAlert('input-alert-slot', 'error', result.error || 'Search failed.');
+        return;
+      }
+      renderOutput(result, criteria);
+      viewInput.classList.add('hidden');
+      viewOutput.classList.remove('hidden');
+    } catch (err) {
+      loadingOverlay.classList.add('hidden');
+      showAlert('input-alert-slot', 'error', 'Unexpected error: ' + err);
+    }
+  });
+
+  document.getElementById('new-search-btn').addEventListener('click', () => {
+    viewOutput.classList.add('hidden');
+    viewInput.classList.remove('hidden');
+    clearAlert('input-alert-slot');
+  });
+
+  function renderOutput(result, criteria) {
+    const propertyTypeLabel = propertyTypeEl.options[propertyTypeEl.selectedIndex].text;
+    const countyLabel = countyEl.options[countyEl.selectedIndex].text;
+    document.getElementById('criteria-property-type').textContent = propertyTypeLabel;
+    document.getElementById('criteria-county').textContent = countyLabel;
+    lastCriteria = { property_type_label: propertyTypeLabel, county_label: countyLabel };
+
+    clearAlert('output-alert-slot');
+    if (result.warning) {
+      showAlert('output-alert-slot', 'warning', result.warning);
+    }
+
+    selectedDlns = new Set();
+    updateExportEnabled();
+
+    const rows = result.rows || [];
+    document.getElementById('row-count').textContent =
+      rows.length === 1 ? '1 result' : `${rows.length} results`;
+
+    if (rows.length === 0) {
+      tableWrap.innerHTML = '<div class="empty-state">No results found for these criteria.</div>';
+      return;
+    }
+
+    const colgroup = '<colgroup><col class="col-check">' +
+      COLUMNS.map(c => `<col class="${c.cls || ''}">`).join('') + '</colgroup>';
+    const thead = '<thead><tr><th></th>' +
+      COLUMNS.map(c => `<th>${c.label}</th>`).join('') + '</tr></thead>';
+    const tbody = '<tbody>' + rows.map(row => {
+      const cells = COLUMNS.map(c => {
+        const display = c.format ? c.format(row[c.field] || '') : (row[c.field] || '');
+        return `<td class="${c.cls || ''}" title="${escapeHtml(display)}">${escapeHtml(display)}</td>`;
+      }).join('');
+      return `<tr><td class="col-check"><input type="checkbox" data-dln="${escapeHtml(row.DLN || '')}"></td>${cells}</tr>`;
+    }).join('') + '</tbody>';
+
+    tableWrap.innerHTML = `<div class="table-scroll"><table class="results">${colgroup}${thead}${tbody}</table></div>`;
+  }
+
+  function updateExportEnabled() {
+    exportBtn.disabled = selectedDlns.size === 0;
+  }
+
+  // Event delegation: row checkboxes are re-created on every search, so one
+  // listener on the (stable) table-wrap container covers all of them.
+  tableWrap.addEventListener('change', (event) => {
+    const cb = event.target;
+    if (!cb.matches('input[type="checkbox"][data-dln]')) return;
+    if (cb.checked) {
+      selectedDlns.add(cb.dataset.dln);
+    } else {
+      selectedDlns.delete(cb.dataset.dln);
+    }
+    updateExportEnabled();
+  });
+
+  exportBtn.addEventListener('click', async () => {
+    clearAlert('output-alert-slot');
+    const payload = { dlns: Array.from(selectedDlns), criteria: lastCriteria || {} };
+    exportBtn.disabled = true;
+    try {
+      const result = await window.pywebview.api.export_selected(payload);
+      if (!result.ok) {
+        showAlert('output-alert-slot', 'error', result.error || 'Export failed.');
+      } else if (!result.cancelled) {
+        showAlert('output-alert-slot', 'success', `Exported ${result.count} row${result.count === 1 ? '' : 's'} to ${result.path}.`);
+      }
+      // Cancel: no alert at all (section 7.6 step 5) — silent no-op.
+    } catch (err) {
+      showAlert('output-alert-slot', 'error', 'Unexpected error: ' + err);
+    } finally {
+      updateExportEnabled();
+    }
+  });
+
+  updateSearchEnabled();
+
+  // pywebview injects window.pywebview and fires 'pywebviewready' once its
+  // JS<->Python bridge is up. If this page was opened directly in a plain
+  // browser tab instead of via `python3 rettd_app.py`, that bridge never
+  // exists — Property Type/County/Look-Back Period still *look* usable
+  // (pure client-side JS), but Search/Municipality/Export all silently
+  // can't work. Fail loudly instead of leaving that to surface as a
+  // confusing per-feature error.
+  setTimeout(() => {
+    if (!window.pywebview) {
+      bridgeMissing = true;
+      showAlert('input-alert-slot', 'error',
+        'This page isn\'t connected to the RETTD desktop app\'s backend. ' +
+        'Run it with "python3 rettd_app.py" from a terminal (see workarea/) ' +
+        'rather than opening index.html directly in a browser tab — ' +
+        'Search, Municipality lookup, and Export all need that connection.');
+      updateSearchEnabled();
+    }
+  }, 2000);
+</script>
+</body>
+</html>

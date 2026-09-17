@@ -4,8 +4,14 @@
 venv/
 notes/
 resources/
+workarea/__pycache__/
 
 # Ignore these files
+.env
 *.csv
+*.xlsx
+*.xls
 README.*
+CLAUDE.md
+
 
