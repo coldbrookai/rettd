@@ -17,6 +17,7 @@ so rettd_export.py never has to import Playwright.
 
 import csv
 import json
+import re
 import sys
 from datetime import date, timedelta
 
@@ -39,6 +40,13 @@ MONTH_ABBR = [
 # Type="Commercial - Warehouse" -> "311".
 COUNTY_CODE = "ME019"          # Penobscot
 PROPERTY_TYPE_CODE = "311"     # Commercial - Warehouse
+
+# State-wide search sentinel (Milestone Two, added 2026-09-17): the site's
+# County <select> has no all-counties option of its own, but the site
+# accepts a search with County left unselected and returns matches across
+# all counties (confirmed live) -- search_m2() maps this sentinel to
+# skipping County selection entirely, not to looping over every county.
+STATEWIDE_COUNTY_CODE = "STATEWIDE"
 BEGIN_TRANSFER_DATE = date(2026, 1, 1)
 END_TRANSFER_DATE = date(2026, 8, 25)
 
@@ -135,6 +143,43 @@ def find_search_button(page):
     raise RuntimeError("Could not find an on-screen Search button.")
 
 
+_PAGE_OF_RE = re.compile(r"Page (\d+) of (\d+)")
+
+
+def _pager_state(page):
+    """Reads the results table's "Page X of Y" indicator. Returns (1, 1)
+    when absent -- a result set of 50 rows or fewer has no pager at all
+    (confirmed live, section 9's pagination note)."""
+    text = page.evaluate(
+        """() => {
+            const el = Array.from(document.querySelectorAll('*')).find(
+                e => e.innerText && /^Page \\d+ of \\d+$/.test(e.innerText.trim())
+            );
+            return el ? el.innerText.trim() : null;
+        }"""
+    )
+    if not text:
+        return 1, 1
+    match = _PAGE_OF_RE.match(text)
+    return int(match.group(1)), int(match.group(2))
+
+
+def _click_next_page(page):
+    """Advances the results table to its next page via the real Prev/Next
+    pager (`a.TablePageLinkNext` / "Page X of Y", section 9) — confirmed
+    live (2026-09-17) to be the site's actual multi-page mechanism, unlike
+    the `a.ScrollForMoreLink` this scraper previously (and incorrectly)
+    treated as pagination; that link stayed inert in every query tested,
+    including ones that turned out to have hundreds of matching rows spread
+    across many pages. `force=True` (used elsewhere in this file, e.g.
+    find_search_button()) breaks this specific click — it skips the
+    hit-testing/actionability check this pager's click handler apparently
+    depends on — so this scrolls the link into view and clicks normally."""
+    next_link = page.locator("a.TablePageLinkNext").first
+    next_link.scroll_into_view_if_needed()
+    next_link.click()
+
+
 def open_datepicker_today(page, date_field_id):
     """Open a date field's picker via its 'Toggle Date Picker' sibling
     button and click 'Today' (confirmed working, section 2's "Date-picker
@@ -218,6 +263,7 @@ def execute_search(
     labels,
     county_code,
     property_type_code,
+    header_to_field,
     municipality_value=None,
     min_price=None,
     max_price=None,
@@ -225,15 +271,22 @@ def execute_search(
     end_date=None,
     log=lambda msg: None,
 ):
-    """Fill and submit the search form; leaves result extraction to the
-    caller. `begin_date`/`end_date` are `date` objects; if `end_date` is
-    None, the End Transfer Date field is set via the datepicker's Today
-    button instead of being typed (Milestone Two behavior, section 6.2).
-    `municipality_value` is an option value from get_municipalities(), not a
-    free-text name.
+    """Fill and submit the search form, then extract every result row across
+    every page (see the Prev/Next pager handling below). `begin_date`/
+    `end_date` are `date` objects; if `end_date` is None, the End Transfer
+    Date field is set via the datepicker's Today button instead of being
+    typed (Milestone Two behavior, section 6.2). `municipality_value` is an
+    option value from get_municipalities(), not a free-text name.
+    `county_code=None` leaves the County field unselected — confirmed live
+    (2026-09-17) that the site itself accepts this and returns matches
+    across all counties, contrary to this file's earlier assumption (from
+    PROJECT_PLAN.md section 6.2's "County: Required") that County was
+    site-mandated; that was a Milestone Two *UI* decision, not a site
+    constraint. `header_to_field` is passed straight through to
+    extract_results() for each page.
 
-    Returns (has_results, municipality_warning). `has_results` is False if
-    the site reported no matching rows (no crash — section 6.5 flags exact
+    Returns (rows, municipality_warning). `rows` is `[]` if the site
+    reported no matching rows (no crash — section 6.5 flags exact
     zero-results presentation as still open, but this at least fails soft).
     `municipality_warning` is a user-facing string if the optional
     Municipality filter couldn't be applied, else None.
@@ -248,11 +301,12 @@ def execute_search(
         return labels[label]
 
     log("Filling search criteria...")
-    county_id = fid("County")
-    # Must click (focus) before select_option() — see
-    # _wait_for_municipality_cascade()'s docstring.
-    page.click(f"#{county_id}")
-    page.select_option(f"#{county_id}", county_code)
+    if county_code:
+        county_id = fid("County")
+        # Must click (focus) before select_option() — see
+        # _wait_for_municipality_cascade()'s docstring.
+        page.click(f"#{county_id}")
+        page.select_option(f"#{county_id}", county_code)
     page.select_option(f"#{fid('Property Type')}", property_type_code)
 
     municipality_warning = None
@@ -317,26 +371,26 @@ def execute_search(
         page.wait_for_selector("table tbody tr[data-row]", timeout=30000)
     except PlaywrightTimeoutError:
         log("No results found.")
-        return False, municipality_warning
+        return [], municipality_warning
 
     page.wait_for_load_state("networkidle", timeout=20000)
 
-    # Exhaust pagination: keep clicking "Scroll for More" while it's
-    # visible/enabled. Once all results are loaded the link is hidden.
-    while True:
-        link = page.locator("a.ScrollForMoreLink").first
-        if link.count() == 0 or not link.is_visible():
-            break
-        before = page.locator("table tbody tr[data-row]").count()
-        link.click(force=True)
-        page.wait_for_timeout(1500)
+    rows = extract_results(page, header_to_field)
+    current_page, total_pages = _pager_state(page)
+    while current_page < total_pages:
+        log(f"Loading page {current_page + 1} of {total_pages}...")
+        _click_next_page(page)
+        page.wait_for_timeout(500)
         page.wait_for_load_state("networkidle", timeout=20000)
-        after = page.locator("table tbody tr[data-row]").count()
-        log(f"Scroll for More: {before} -> {after} rows")
-        if after == before:
+        rows.extend(extract_results(page, header_to_field))
+        new_page, total_pages = _pager_state(page)
+        if new_page <= current_page:
+            log("Page number did not advance after clicking Next — stopping "
+                "with what's loaded so far rather than looping forever.")
             break
+        current_page = new_page
 
-    return True, municipality_warning
+    return rows, municipality_warning
 
 
 def extract_results(page, header_to_field):
@@ -386,17 +440,17 @@ def run_search():
 
         open_search_form(page, log)
         labels = resolve_labels(page)
-        has_results, _ = execute_search(
+        rows, _ = execute_search(
             page,
             labels,
             county_code=COUNTY_CODE,
             property_type_code=PROPERTY_TYPE_CODE,
+            header_to_field=HEADER_TO_FIELD,
             begin_date=BEGIN_TRANSFER_DATE,
             end_date=END_TRANSFER_DATE,
             log=log,
         )
-        rows = extract_results(page, HEADER_TO_FIELD) if has_results else []
-        log(f"Extracting {len(rows)} result rows...")
+        log(f"Extracted {len(rows)} result rows...")
         browser.close()
         return rows
 
@@ -407,29 +461,43 @@ def search_m2(property_type_code, county_code, look_back, municipality_value=Non
     Transfer Date always today. `municipality_value` is an option value from
     get_municipalities(), not a free-text name. Returns
     (rows_sorted, municipality_warning); rows include the Buyer column
-    (M2_FIELDS)."""
+    (M2_FIELDS).
+
+    `county_code == STATEWIDE_COUNTY_CODE` runs a single search with County
+    left unselected (`execute_search(county_code=None, ...)`), rather than
+    one search per county — confirmed live (2026-09-17, after an earlier
+    16-county-loop version proved both wrong and painfully slow) that the
+    site itself accepts a blank County and returns matches across all
+    counties in the same ~1-20s as a single-county search. Municipality has
+    no meaning without a County selected, so `municipality_value` is
+    ignored in that case."""
+    is_statewide = county_code == STATEWIDE_COUNTY_CODE
+    site_county_code = None if is_statewide else county_code
+    muni_value = None if is_statewide else municipality_value
+    begin_date = compute_begin_date(date.today(), look_back)
+
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
 
         open_search_form(page, log)
         labels = resolve_labels(page)
-        begin_date = compute_begin_date(date.today(), look_back)
-        has_results, municipality_warning = execute_search(
+        rows, municipality_warning = execute_search(
             page,
             labels,
-            county_code=county_code,
+            county_code=site_county_code,
             property_type_code=property_type_code,
-            municipality_value=municipality_value,
+            header_to_field=HEADER_TO_FIELD_M2,
+            municipality_value=muni_value,
             min_price=M2_MIN_PRICE,
             max_price=M2_MAX_PRICE,
             begin_date=begin_date,
             end_date=None,
             log=log,
         )
-        rows = extract_results(page, HEADER_TO_FIELD_M2) if has_results else []
         browser.close()
-        return sort_rows(rows), municipality_warning
+
+    return sort_rows(rows), municipality_warning
 
 
 def write_csv(rows, path):

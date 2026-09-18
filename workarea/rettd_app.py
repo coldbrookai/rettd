@@ -99,6 +99,11 @@ def main():
         width=1100,
         height=800,
         min_size=(700, 500),
+        # The results table and output header (section 6.4) are laid out
+        # for a full desktop-sized window -- start maximized rather than at
+        # the width/height above, which are only a fallback for platforms
+        # where maximized on launch isn't honored.
+        maximized=True,
     )
     api.window = window
     webview.start()

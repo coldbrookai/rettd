@@ -14,17 +14,10 @@ browser automation as a dependency.
 
 import re
 from datetime import datetime
-from pathlib import Path
 
 from openpyxl import Workbook
-from openpyxl.drawing.image import Image as XLImage
-from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, OneCellAnchor
-from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.utils.units import pixels_to_EMU
-
-LOGO_PATH = Path(__file__).resolve().parent.parent / "resources" / "MVClgo01.png"
 
 # Underlying data field names, in export column order (matches the on-screen
 # table's 8 columns, section 6.4 -- Buyer added to Milestone One's original
@@ -77,7 +70,7 @@ HEADER_FONT = Font(color="FFFFFF", bold=True)
 _THIN = Side(style="thin", color="000000")
 THIN_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 
-HEADER_ROW = 8
+HEADER_ROW = 9
 
 
 def natural_sort_key(value: str):
@@ -130,40 +123,12 @@ def _parse_transfer_date(value):
         return None
 
 
-def _column_width_to_px(width):
-    """Excel column-width units -> pixels, for the default Calibri 11 font
-    (max digit width 7px) -- the OOXML spec's documented conversion. Excel
-    has no native "center a floating image across N columns" primitive, so
-    centering the logo (below) means computing real pixel offsets rather
-    than just anchoring it at a cell."""
-    mdw = 7
-    return int(((256 * width + int(128 / mdw)) / 256) * mdw)
-
-
-def _centered_logo_anchor(logo_width_px, logo_height_px):
-    """A OneCellAnchor positioning the logo horizontally centered across the
-    table's full width (matching the on-screen output header, which centers
-    the logo above the title), on row 1."""
-    column_widths_px = [_column_width_to_px(COLUMN_WIDTHS[f]) for f in FIELD_KEYS]
-    total_px = sum(column_widths_px)
-    offset_px = max(0, (total_px - logo_width_px) // 2)
-
-    col, remaining = 0, offset_px
-    for w in column_widths_px:
-        if remaining < w:
-            break
-        remaining -= w
-        col += 1
-
-    marker = AnchorMarker(col=col, colOff=pixels_to_EMU(remaining), row=0, rowOff=0)
-    size = XDRPositiveSize2D(cx=pixels_to_EMU(logo_width_px), cy=pixels_to_EMU(logo_height_px))
-    return OneCellAnchor(_from=marker, ext=size)
-
-
 def build_workbook(selected_rows, criteria):
     """Build (but don't save) the export workbook. `criteria` is a dict with
-    optional 'property_type_label'/'county_label' display strings (section
-    6.4's criteria echo -- Property Type + County only)."""
+    optional 'property_type_label'/'county_label'/'municipality_label'
+    display strings (section 6.4's criteria echo). `municipality_label`
+    defaults to "All Municipalities" if omitted, matching the on-screen
+    dropdown's own default option when no specific municipality is chosen."""
     rows_sorted = sort_rows(selected_rows)
 
     wb = Workbook()
@@ -172,20 +137,11 @@ def build_workbook(selected_rows, criteria):
 
     last_col = get_column_letter(len(FIELD_KEYS))
 
-    if LOGO_PATH.exists():
-        img = XLImage(str(LOGO_PATH))
-        # Keep the logo's ~180x49 aspect ratio at a fixed 40px height.
-        img.height = 40
-        img.width = int(img.width * (40 / img.height))
-        # Centered across the table width, consistent with the on-screen
-        # output header (which centers the logo above the title).
-        img.anchor = _centered_logo_anchor(img.width, img.height)
-        ws.add_image(img)
-    ws.row_dimensions[1].height = 32
+    # Empty spacer row above the title (previously held the now-removed logo
+    # image, section 7.4 update 2026-09-17) -- kept merged for a consistent
+    # cell grid with the title/subtitle rows below it.
+    ws.merge_cells(f"A1:{last_col}1")
 
-    # Title/subtitle get their own rows (rather than sharing row 1/2 with the
-    # logo, as originally laid out) so they can be merged and centered across
-    # the full table width without the logo image overlapping the text.
     ws.merge_cells(f"A2:{last_col}2")
     ws["A2"] = "Commercial Sale Leads"
     ws["A2"].font = Font(size=18, bold=True)
@@ -193,20 +149,32 @@ def build_workbook(selected_rows, criteria):
 
     ws.merge_cells(f"A3:{last_col}3")
     ws["A3"] = "Maine Department of Revenue - Real Estate Transfer Tax Database"
-    ws["A3"].font = Font(size=10, italic=True, color="68756B")
+    ws["A3"].font = Font(size=14, bold=True, color="000000")
     ws["A3"].alignment = Alignment(horizontal="center")
 
-    ws["A5"] = f"Property Type: {criteria.get('property_type_label', '')}"
-    ws["A5"].font = Font(size=10)
-    ws["A6"] = f"County: {criteria.get('county_label', '')}"
-    ws["A6"].font = Font(size=10)
+    # Labels stay in column A ("reference categories"); values sit one cell
+    # right in column B so the three values line up in their own vertical
+    # column, separated from the labels (section 7.4 update 2026-09-17).
+    criteria_rows = (
+        ("A5", "B5", "Property Type:", criteria.get("property_type_label", "")),
+        ("A6", "B6", "County:", criteria.get("county_label", "")),
+        ("A7", "B7", "Municipality:", criteria.get("municipality_label", "All Municipalities")),
+    )
+    for label_ref, value_ref, label, value in criteria_rows:
+        ws[label_ref] = label
+        ws[label_ref].font = Font(size=10)
+        ws[value_ref] = value
+        ws[value_ref].font = Font(size=10)
 
     for col_idx, field in enumerate(FIELD_KEYS, start=1):
         cell = ws.cell(row=HEADER_ROW, column=col_idx, value=SHEET_HEADERS[field])
         cell.fill = HEADER_FILL
         cell.font = HEADER_FONT
         cell.border = THIN_BORDER
-        cell.alignment = Alignment(horizontal="right" if field == "DLN" else "left")
+        # Right-aligned to match the (numeric/date-valued, so already
+        # right-aligned by Excel's default) data cells beneath them.
+        right_aligned = field in ("DLN", "Transfer Date", "Purchase Price")
+        cell.alignment = Alignment(horizontal="right" if right_aligned else "left")
 
     for row_offset, row in enumerate(rows_sorted, start=1):
         r = HEADER_ROW + row_offset

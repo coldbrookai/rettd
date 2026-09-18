@@ -34,9 +34,38 @@
   #view-input {
     min-height: 100vh;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 32px 16px;
+    padding: 48px 16px;
+    gap: 40px;
+  }
+  .input-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .input-header img { height: 56px; width: auto; }
+  .input-header h1 {
+    margin: 4px 0 0;
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text);
+    text-align: center;
+  }
+  .input-header .subtitle {
+    margin: 0;
+    font-size: 14pt;
+    font-weight: 700;
+    color: var(--text);
+    text-align: center;
+  }
+  .input-footer {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
   }
   .card {
     background: var(--surface);
@@ -132,7 +161,7 @@
 
   /* ---------- Output page (section 6.4) ---------- */
   #view-output {
-    max-width: 1100px;
+    max-width: calc(100vw - 48px);
     margin: 0 auto;
     padding: 24px 16px 48px;
   }
@@ -149,8 +178,8 @@
     margin: 8px 0 2px;
   }
   .output-header .subtitle {
-    font-style: italic;
-    font-size: 13px;
+    font-weight: 700;
+    font-size: 14pt;
     color: var(--muted);
     margin: 0 0 8px;
   }
@@ -181,11 +210,12 @@
     table-layout: fixed;
   }
   table.results col.col-check { width: 40px; }
+  table.results col.col-municipality { width: 160px; }
   table.results col.col-map,
   table.results col.col-lot { width: 70px; }
   table.results col.col-price { width: 120px; }
   table.results col.col-date { width: 110px; }
-  table.results col.col-dln { width: 110px; }
+  table.results col.col-dln { width: 140px; }
   table.results thead th {
     position: sticky;
     top: 0;
@@ -208,8 +238,15 @@
     text-overflow: ellipsis;
   }
   table.results tbody tr:last-child td { border-bottom: none; }
+  table.results th.col-check,
   table.results td.col-check { text-align: center; }
+  table.results th.col-check input,
   table.results td.col-check input { accent-color: var(--primary); }
+
+  table.results th.col-date,
+  table.results th.col-price { text-align: center; }
+  table.results td.col-date,
+  table.results td.col-price { text-align: right; }
 
   .empty-state {
     padding: 32px;
@@ -234,12 +271,35 @@
     color: var(--text);
     box-shadow: 0 10px 24px rgba(38,53,43,0.14);
   }
+
+  .screen-size-warning {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--warning);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    padding: 8px 16px;
+  }
 </style>
 </head>
 <body>
 
+<div class="screen-size-warning hidden" id="screen-size-warning">
+  This app is designed for a full-size desktop window. Some screens may not
+  display well at this window size — please maximize the window or switch
+  to a larger display.
+</div>
+
 <!-- ========== Input page (matches resources/NewDataEntry.png) ========== -->
 <section id="view-input">
+  <div class="input-header">
+    <img src="resources/MVClgo01.png" alt="Maine Valuation Company">
+    <h1>Commercial Sale Leads</h1>
+    <p class="subtitle">Maine Department of Revenue - Real Estate Transfer Tax Database</p>
+  </div>
   <div class="card">
     <div id="input-alert-slot"></div>
 
@@ -277,6 +337,7 @@
       <label for="county">County *</label>
       <select id="county">
         <option value="" selected disabled>Select...</option>
+        <option value="STATEWIDE">State-wide</option>
         <option value="ME001">Androscoggin</option>
         <option value="ME003">Aroostook</option>
         <option value="ME005">Cumberland</option>
@@ -318,6 +379,7 @@
 
     <button class="btn-primary" id="search-btn" disabled>Search</button>
   </div>
+  <p class="input-footer">Copyright &#169; 2026 Maine Valuation Company</p>
 </section>
 
 <!-- ========== Output page (matches resources/NewOutputLayout.png) ========== -->
@@ -332,6 +394,8 @@
       <strong>Property Type:</strong> <span id="criteria-property-type"></span>
       &nbsp;&nbsp;
       <strong>County:</strong> <span id="criteria-county"></span>
+      &nbsp;&nbsp;
+      <strong>Municipality:</strong> <span id="criteria-municipality"></span>
     </p>
   </div>
 
@@ -363,12 +427,13 @@
   const lookbackChecks = Array.from(document.querySelectorAll('[data-lookback]'));
   const exportBtn = document.getElementById('export-btn');
   const tableWrap = document.getElementById('table-wrap');
+  const screenSizeWarning = document.getElementById('screen-size-warning');
   let selectedDlns = new Set();
   let lastCriteria = null;
   let bridgeMissing = false;
 
   const COLUMNS = [
-    { field: 'Municipality', label: 'Municipality' },
+    { field: 'Municipality', label: 'Municipality', cls: 'col-municipality' },
     { field: 'Map', label: 'Map', cls: 'col-map' },
     { field: 'Lot', label: 'Lot', cls: 'col-lot' },
     { field: 'Seller', label: 'Seller' },
@@ -404,6 +469,14 @@
     clearAlert('input-alert-slot');
     if (!countyEl.value) {
       municipalityEl.innerHTML = '<option value="">Select a county first</option>';
+      municipalityEl.disabled = true;
+      return;
+    }
+    // State-wide spans all counties, so a single-county Municipality filter
+    // doesn't apply -- skip the cascade fetch entirely rather than calling
+    // get_municipalities() with a county code the site doesn't recognize.
+    if (countyEl.value === 'STATEWIDE') {
+      municipalityEl.innerHTML = '<option value="">Not applicable for State-wide</option>';
       municipalityEl.disabled = true;
       return;
     }
@@ -472,6 +545,10 @@
       municipality_value: municipalityEl.value || null,
       look_back: selectedLookback(),
     };
+    // Disabled for the duration of the search, not just visually "loading" --
+    // otherwise a second click during the live 10-20s search (easy for an
+    // impatient user to do) fires a second full search against the site.
+    searchBtn.disabled = true;
     loadingOverlay.classList.remove('hidden');
     try {
       const result = await window.pywebview.api.search(criteria);
@@ -486,6 +563,8 @@
     } catch (err) {
       loadingOverlay.classList.add('hidden');
       showAlert('input-alert-slot', 'error', 'Unexpected error: ' + err);
+    } finally {
+      updateSearchEnabled();
     }
   });
 
@@ -498,9 +577,15 @@
   function renderOutput(result, criteria) {
     const propertyTypeLabel = propertyTypeEl.options[propertyTypeEl.selectedIndex].text;
     const countyLabel = countyEl.options[countyEl.selectedIndex].text;
+    // Municipality is optional (section 6.2) -- its dropdown's own default
+    // option is already labelled "All Municipalities" (see onCountyChange()),
+    // so reading the selected option's text covers both cases with no
+    // special-casing needed here.
+    const municipalityLabel = municipalityEl.options[municipalityEl.selectedIndex].text;
     document.getElementById('criteria-property-type').textContent = propertyTypeLabel;
     document.getElementById('criteria-county').textContent = countyLabel;
-    lastCriteria = { property_type_label: propertyTypeLabel, county_label: countyLabel };
+    document.getElementById('criteria-municipality').textContent = municipalityLabel;
+    lastCriteria = { property_type_label: propertyTypeLabel, county_label: countyLabel, municipality_label: municipalityLabel };
 
     clearAlert('output-alert-slot');
     if (result.warning) {
@@ -521,8 +606,8 @@
 
     const colgroup = '<colgroup><col class="col-check">' +
       COLUMNS.map(c => `<col class="${c.cls || ''}">`).join('') + '</colgroup>';
-    const thead = '<thead><tr><th></th>' +
-      COLUMNS.map(c => `<th>${c.label}</th>`).join('') + '</tr></thead>';
+    const thead = '<thead><tr><th class="col-check"><input type="checkbox" data-select-all title="Select all"></th>' +
+      COLUMNS.map(c => `<th class="${c.cls || ''}">${c.label}</th>`).join('') + '</tr></thead>';
     const tbody = '<tbody>' + rows.map(row => {
       const cells = COLUMNS.map(c => {
         const display = c.format ? c.format(row[c.field] || '') : (row[c.field] || '');
@@ -538,16 +623,45 @@
     exportBtn.disabled = selectedDlns.size === 0;
   }
 
-  // Event delegation: row checkboxes are re-created on every search, so one
-  // listener on the (stable) table-wrap container covers all of them.
+  function rowCheckboxes() {
+    return tableWrap.querySelectorAll('tbody input[type="checkbox"][data-dln]');
+  }
+
+  // Reflects current selection state on the header checkbox: checked when
+  // every row is selected, indeterminate when some (but not all) are.
+  function updateSelectAllState() {
+    const selectAll = tableWrap.querySelector('[data-select-all]');
+    if (!selectAll) return;
+    const rowChecks = Array.from(rowCheckboxes());
+    const checkedCount = rowChecks.filter(rc => rc.checked).length;
+    selectAll.checked = rowChecks.length > 0 && checkedCount === rowChecks.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < rowChecks.length;
+  }
+
+  // Event delegation: row/select-all checkboxes are re-created on every
+  // search, so one listener on the (stable) table-wrap container covers
+  // all of them.
   tableWrap.addEventListener('change', (event) => {
     const cb = event.target;
+    if (cb.matches('[data-select-all]')) {
+      rowCheckboxes().forEach(rc => {
+        rc.checked = cb.checked;
+        if (cb.checked) {
+          selectedDlns.add(rc.dataset.dln);
+        } else {
+          selectedDlns.delete(rc.dataset.dln);
+        }
+      });
+      updateExportEnabled();
+      return;
+    }
     if (!cb.matches('input[type="checkbox"][data-dln]')) return;
     if (cb.checked) {
       selectedDlns.add(cb.dataset.dln);
     } else {
       selectedDlns.delete(cb.dataset.dln);
     }
+    updateSelectAllState();
     updateExportEnabled();
   });
 
@@ -590,6 +704,21 @@
       updateSearchEnabled();
     }
   }, 2000);
+
+  // Screen-size warning: measures actual viewport width rather than
+  // sniffing navigator.userAgent for "mobile" — user-agent strings are
+  // easy to spoof/miss and don't actually tell you whether the window is
+  // usably wide, which is the real concern (this also catches someone
+  // shrinking the desktop window itself, not just a phone browser).
+  // 700px matches rettd_app.py's create_window(min_size=(700, 500)) floor.
+  const SMALL_SCREEN_BREAKPOINT = 700;
+
+  function updateScreenSizeWarning() {
+    screenSizeWarning.classList.toggle('hidden', window.innerWidth >= SMALL_SCREEN_BREAKPOINT);
+  }
+
+  window.addEventListener('resize', updateScreenSizeWarning);
+  updateScreenSizeWarning();
 </script>
 </body>
 </html>
