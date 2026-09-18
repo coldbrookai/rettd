@@ -70,7 +70,7 @@ HEADER_FONT = Font(color="FFFFFF", bold=True)
 _THIN = Side(style="thin", color="000000")
 THIN_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 
-HEADER_ROW = 9
+HEADER_ROW = 10
 
 
 def natural_sort_key(value: str):
@@ -125,10 +125,11 @@ def _parse_transfer_date(value):
 
 def build_workbook(selected_rows, criteria):
     """Build (but don't save) the export workbook. `criteria` is a dict with
-    optional 'property_type_label'/'county_label'/'municipality_label'
-    display strings (section 6.4's criteria echo). `municipality_label`
-    defaults to "All Municipalities" if omitted, matching the on-screen
-    dropdown's own default option when no specific municipality is chosen."""
+    optional 'property_type_label'/'county_label'/'municipality_label'/
+    'look_back_label' display strings (section 6.4's criteria echo).
+    `municipality_label` defaults to "All Municipalities" if omitted,
+    matching the on-screen dropdown's own default option when no specific
+    municipality is chosen."""
     rows_sorted = sort_rows(selected_rows)
 
     wb = Workbook()
@@ -153,12 +154,16 @@ def build_workbook(selected_rows, criteria):
     ws["A3"].alignment = Alignment(horizontal="center")
 
     # Labels stay in column A ("reference categories"); values sit one cell
-    # right in column B so the three values line up in their own vertical
-    # column, separated from the labels (section 7.4 update 2026-09-17).
+    # right in column B so the values line up in their own vertical column,
+    # separated from the labels (section 7.4 update 2026-09-17). Look-Back
+    # Period added as a 4th row on 2026-09-18 (HEADER_ROW bumped 9->10 so
+    # there's still a blank line between the criteria block and the table,
+    # same as before this row was added).
     criteria_rows = (
         ("A5", "B5", "Property Type:", criteria.get("property_type_label", "")),
         ("A6", "B6", "County:", criteria.get("county_label", "")),
         ("A7", "B7", "Municipality:", criteria.get("municipality_label", "All Municipalities")),
+        ("A8", "B8", "Look-Back Period:", criteria.get("look_back_label", "")),
     )
     for label_ref, value_ref, label, value in criteria_rows:
         ws[label_ref] = label

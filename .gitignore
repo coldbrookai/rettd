@@ -1,17 +1,17 @@
 # RETTD Project
 
-# Ignore these folders
+## Ignore these folders
 venv/
 notes/
 resources/
 workarea/__pycache__/
 
-# Ignore these files
+## Ignore these files
 .env
 *.csv
 *.xlsx
 *.xls
 README.*
-CLAUDE.md
+CLAUDE.*
 
 

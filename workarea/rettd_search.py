@@ -285,11 +285,18 @@ def execute_search(
     constraint. `header_to_field` is passed straight through to
     extract_results() for each page.
 
-    Returns (rows, municipality_warning). `rows` is `[]` if the site
-    reported no matching rows (no crash — section 6.5 flags exact
-    zero-results presentation as still open, but this at least fails soft).
-    `municipality_warning` is a user-facing string if the optional
-    Municipality filter couldn't be applied, else None.
+    Returns (rows, warning). `rows` is `[]` if the site reported no
+    matching rows (no crash — section 6.5 flags exact zero-results
+    presentation as still open, but this at least fails soft). `warning` is
+    a user-facing string (or None) combining two independent, unrelated
+    conditions if both occur: the optional Municipality filter couldn't be
+    applied, and/or a network failure partway through loading additional
+    result pages cut pagination short (section 8's Milestone Four update,
+    2026-09-18) — in the latter case `rows` still holds everything
+    successfully retrieved before the failure, not an empty list. A
+    connection failure during the *initial* search submission raises
+    RuntimeError instead, since there are no partial rows to fall back to
+    at that point.
     """
 
     def fid(label):
@@ -370,27 +377,64 @@ def execute_search(
         # matches. 30s gives real headroom (see PROJECT_PLAN.md section 9).
         page.wait_for_selector("table tbody tr[data-row]", timeout=30000)
     except PlaywrightTimeoutError:
+        # Ambiguous by design (a genuine zero-result query and a network
+        # stall both manifest as this same timeout, and Playwright gives no
+        # reliable way to tell them apart here) — treated as "no results"
+        # rather than an error, per section 6.5's open item; a hard
+        # connection failure (below) is distinguished where it's actually
+        # detectable.
         log("No results found.")
         return [], municipality_warning
+    except Exception as exc:
+        raise RuntimeError(
+            f"Lost connection to revenue.maine.gov while submitting the "
+            f"search — check your internet connection and try again: {exc}"
+        )
 
-    page.wait_for_load_state("networkidle", timeout=20000)
+    try:
+        page.wait_for_load_state("networkidle", timeout=20000)
+    except PlaywrightTimeoutError:
+        # Non-fatal: the results rows the previous wait already confirmed
+        # are present are what actually matters, not whether every
+        # background request the page fired has settled.
+        log("Page did not reach idle after loading results — continuing "
+            "anyway since the rows already loaded successfully.")
 
     rows = extract_results(page, header_to_field)
     current_page, total_pages = _pager_state(page)
+    pagination_warning = None
     while current_page < total_pages:
         log(f"Loading page {current_page + 1} of {total_pages}...")
-        _click_next_page(page)
-        page.wait_for_timeout(500)
-        page.wait_for_load_state("networkidle", timeout=20000)
-        rows.extend(extract_results(page, header_to_field))
-        new_page, total_pages = _pager_state(page)
+        try:
+            _click_next_page(page)
+            page.wait_for_timeout(500)
+            page.wait_for_load_state("networkidle", timeout=20000)
+            rows.extend(extract_results(page, header_to_field))
+            new_page, total_pages = _pager_state(page)
+        except PlaywrightTimeoutError:
+            pagination_warning = (
+                f"Network timeout while loading page {current_page + 1} of "
+                f"{total_pages} — showing the {len(rows)} rows retrieved so "
+                "far; results may be incomplete."
+            )
+            log(pagination_warning)
+            break
+        except Exception as exc:
+            pagination_warning = (
+                f"Lost connection while loading page {current_page + 1} of "
+                f"{total_pages} — showing the {len(rows)} rows retrieved so "
+                f"far; results may be incomplete ({exc})."
+            )
+            log(pagination_warning)
+            break
         if new_page <= current_page:
             log("Page number did not advance after clicking Next — stopping "
                 "with what's loaded so far rather than looping forever.")
             break
         current_page = new_page
 
-    return rows, municipality_warning
+    warnings = [w for w in (municipality_warning, pagination_warning) if w]
+    return rows, " ".join(warnings) if warnings else None
 
 
 def extract_results(page, header_to_field):

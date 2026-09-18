@@ -396,6 +396,8 @@
       <strong>County:</strong> <span id="criteria-county"></span>
       &nbsp;&nbsp;
       <strong>Municipality:</strong> <span id="criteria-municipality"></span>
+      &nbsp;&nbsp;
+      <strong>Look-Back Period:</strong> <span id="criteria-lookback"></span>
     </p>
   </div>
 
@@ -517,6 +519,15 @@
     return checked ? checked.dataset.lookback : null;
   }
 
+  // Display text for the criteria echo (§6.4/§7.4) -- the checkbox's own
+  // <label> text ("30 Days", "1 Year", etc.), not its data-lookback value.
+  function selectedLookbackLabel() {
+    const checked = lookbackChecks.find(cb => cb.checked);
+    if (!checked) return '';
+    const label = document.querySelector(`label[for="${checked.id}"]`);
+    return label ? label.textContent : '';
+  }
+
   function updateSearchEnabled() {
     const ok = propertyTypeEl.value && countyEl.value && selectedLookback() && !bridgeMissing;
     searchBtn.disabled = !ok;
@@ -582,10 +593,17 @@
     // so reading the selected option's text covers both cases with no
     // special-casing needed here.
     const municipalityLabel = municipalityEl.options[municipalityEl.selectedIndex].text;
+    const lookBackLabel = selectedLookbackLabel();
     document.getElementById('criteria-property-type').textContent = propertyTypeLabel;
     document.getElementById('criteria-county').textContent = countyLabel;
     document.getElementById('criteria-municipality').textContent = municipalityLabel;
-    lastCriteria = { property_type_label: propertyTypeLabel, county_label: countyLabel, municipality_label: municipalityLabel };
+    document.getElementById('criteria-lookback').textContent = lookBackLabel;
+    lastCriteria = {
+      property_type_label: propertyTypeLabel,
+      county_label: countyLabel,
+      municipality_label: municipalityLabel,
+      look_back_label: lookBackLabel,
+    };
 
     clearAlert('output-alert-slot');
     if (result.warning) {
